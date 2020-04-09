@@ -2,8 +2,11 @@ from flask import Flask
 from flask import render_template
 from flask import request,session, redirect, url_for, escape,send_from_directory,make_response
 from customer import customerList
-import pymysql
-import json
+#from event import eventList
+import pymysql,json,time
+
+from flask_session import Session  #serverside sessions
+
 app = Flask(__name__,static_url_path='')
 
 SESSION_TYPE = 'filesystem'
@@ -18,6 +21,44 @@ def set():
 @app.route('/get')
 def get():
     return str(session['time'])
+
+@app.route('/login',methods = ['GET','POST'])
+def login():
+    '''
+    -check login
+    -set session
+    -redirect to menu
+    -check session on login pages
+    '''
+    if request.form.get('email') is not None and request.form.get('password') is not None:
+        c = customerList()
+        if c.tryLogin(request.form.get('email'),request.form.get('password')):
+            #print('login ok')
+            session['user'] = c.data[0]
+            session['active'] = time.time()
+
+            return redirect('main')
+        else:
+            #print('login failed')
+            return render_template('login.html', title='Login', msg='Incorrect username or password.')
+    else:
+        if 'msg' not in session.keys() or session['msg'] is None:
+            m = 'Type your email and password to continue.'
+        else:
+            m = session['msg']
+            session['msg'] = None
+        return render_template('login.html', title='Login', msg=m)
+
+@app.route('/logout',methods = ['GET','POST'])
+def logout():
+    del session['user']
+    del session['active']
+    return render_template('login.html', title='Login', msg='You have logged out.')
+
+@app.route('/nothing')
+def nothing():
+    print('hi')
+    return ''
 
 @app.route('/login',methods = ['GET','POST'])
 def login():
@@ -60,31 +101,37 @@ def nothing():
 @app.route('/basichttp') #did not render a template, only returned a string
 def basichttp():
     if request.args.get('myvar') is not None:
-        return 'your var:' + request.args.get('myvar') #add key vakue arg with ?
+        a = request.args.get('myvar')
+        return 'your var:' + request.args.get('myvar')
     else:
         return 'myvar not set'
 #print function is sent to the command prompt
 
 @app.route('/')
 def home():
-    return render_template('test.html', title='Test', msg='Welcome!') #sends data out to the user interface
+    return render_template('test.html', title='Test2', msg='Welcome!')
 
 @app.route('/index')
 def index():
-    user = {'username': 'Kayshale'}
+    user = {'username': 'Tyler'}
 
-    items = [{'name':'Apple','price':2.34},{'name':'Orange','price':4.88},{'name':'Grape','price':2.44}]
 
+    items = [
+        {'name':'Apple','price':2.34},
+        {'name':'Orange','price':4.88},
+        {'name':'Grape','price':2.44}
+    ]
     return render_template('index.html', title='Home', user=user, items=items)
-
 @app.route('/customers')
 def customers():
+    if checkSession() == False:
+        return redirect('login')
     c = customerList()
     c.getAll()
 
     print(c.data)
     #return ''
-    return render_template('customers.html', title='Customer List', customers=c.data)
+    return render_template('customers.html', title='Customer List',  customers=c.data)
 
 @app.route('/customer')
 def customer():
@@ -100,10 +147,11 @@ def customer():
 
     print(c.data)
     return render_template('customer.html', title='Customer ',  customer=c.data[0])
-
-@app.route('/newcustomer', methods =['GET', 'POST'])
+@app.route('/newcustomer',methods = ['GET', 'POST'])
 def newcustomer():
-    if request.forms.get('fname') is None:
+    if checkSession() == False:
+        return redirect('login')
+    if request.form.get('fname') is None:
         c = customerList()
         c.set('fname','')
         c.set('lname','')
@@ -111,22 +159,21 @@ def newcustomer():
         c.set('password','')
         c.set('subscribed','')
         c.add()
-        return render_template('newcustomer.html', title='New Customer', customer=c.data[0])
+        return render_template('newcustomer.html', title='New Customer',  customer=c.data[0])
     else:
         c = customerList()
-        c.set('fname',request.forms.get('fname'))
-        c.set('lname',request.forms.get('lname'))
-        c.set('email',request.forms.get('email'))
-        c.set('password',request.forms.get('password'))
-        c.set('subscribed',request.forms.get('subscribed'))
+        c.set('fname',request.form.get('fname'))
+        c.set('lname',request.form.get('lname'))
+        c.set('email',request.form.get('email'))
+        c.set('password',request.form.get('password'))
+        c.set('subscribed',request.form.get('subscribed'))
         c.add()
         if c.verifyNew():
             c.insert()
             print(c.data)
-            return render_template('savedcustomer.html', title='Customer Saved', customer=c.data[0])
+            return render_template('savedcustomer.html', title='Customer Saved',  customer=c.data[0])
         else:
-            return render_template('newcustomer.html', title="Customer Not Saved", customer=c.data[0], msg=c.errorList)
-
+            return render_template('newcustomer.html', title='Customer Not Saved',  customer=c.data[0],msg=c.errorList)
 @app.route('/savecustomer',methods = ['GET', 'POST'])
 def savecustomer():
     if checkSession() == False:
@@ -143,7 +190,6 @@ def savecustomer():
     print(c.data)
     #return ''
     return render_template('savedcustomer.html', title='Customer Saved',  customer=c.data[0])
-
 '''
 ================================================================
 START EVENT PAGES:
@@ -278,6 +324,13 @@ def main():
     userinfo = 'Hello, ' + session['user']['fname']
     return render_template('main.html', title='Main menu',msg = userinfo)
 
+@app.route('/main')
+def main():
+    if checkSession() == False:
+        return redirect('login')
+    userinfo = 'Hello, ' + session['user']['fname']
+    return render_template('main.html', title='Main menu',msg = userinfo)
+
 def checkSession():
     if 'active' in session.keys():
         timeSinceAct = time.time() - session['active']
@@ -290,6 +343,7 @@ def checkSession():
             return True
     else:
         return False
+
 
 @app.route('/static/<path:path>')
 def send_static(path):
