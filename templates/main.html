@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h1>Main menu</h1>
+	{% if msg %}
+      <div id="menumsg">
+		{{ msg }}
+	  </div>
+    {% endif %}
+	<br><br>
+	<a href="customers">Manage Customers</a><br>
+	<a href="events">Manage Events</a><br>
+	<a href="newreview">Leave review</a><br>
+
+
+{% endblock %}
